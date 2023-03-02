@@ -868,3 +868,190 @@ class Classify(nn.Module):
         if isinstance(x, list):
             x = torch.cat(x, 1)
         return self.linear(self.drop(self.pool(self.conv(x)).flatten(1)))
+
+
+try:
+    # PyTorch 1.7.0 and newer versions
+    import torch.fft
+
+    def dct1_rfft_impl(x):
+        return torch.view_as_real(torch.fft.rfft(x, dim=1))
+    
+    def dct_fft_impl(v):
+        return torch.view_as_real(torch.fft.fft(v, dim=1))
+
+    def idct_irfft_impl(V):
+        return torch.fft.irfft(torch.view_as_complex(V), n=V.shape[1], dim=1)
+except ImportError:
+    # PyTorch 1.6.0 and older versions
+    def dct1_rfft_impl(x):
+        return torch.rfft(x, 1)
+    
+    def dct_fft_impl(v):
+        return torch.rfft(v, 1, onesided=False)
+
+    def idct_irfft_impl(V):
+        return torch.irfft(V, 1, onesided=False)
+
+
+class DCT_2D(nn.Module):
+    def __init__(self, norm=None, tau=0.2, mask_freq:bool=True):
+        super(DCT_2D, self).__init__()
+        self.norm = norm
+        self.tau = tau
+        self.mask_freq = mask_freq
+
+
+    def dct_2d(self, x, norm=None):
+        X1 = self.dct(x, norm=norm)
+        X2 = self.dct(X1.transpose(-1, -2), norm=norm)
+        return X2.transpose(-1, -2)
+
+
+    def dct(self, x, norm=None):
+        x_shape = x.shape
+        N = x_shape[-1]
+        x = x.contiguous().view(-1, N)
+
+        v = torch.cat([x[:, ::2], x[:, 1::2].flip([1])], dim=1)
+        Vc = dct_fft_impl(v)
+
+        k = - torch.arange(N, dtype=x.dtype, device=x.device)[None, :] * np.pi / (2 * N)
+        W_r = torch.cos(k)
+        W_i = torch.sin(k)
+
+        V = Vc[:, :, 0] * W_r - Vc[:, :, 1] * W_i
+
+        if norm == 'ortho':
+            V[:, 0] /= np.sqrt(N) * 2
+            V[:, 1:] /= np.sqrt(N / 2) * 2 # *= np.sqrt(2/N)
+            V = 2 * V.view(*x_shape)
+        elif norm == 'infusion':
+            V *= torch.where(V == 0, np.sqrt(1/N), np.sqrt(2/N))
+            V = V.view(*x_shape)
+        else:
+            V = 2 * V.view(*x_shape)
+
+        return V
+
+    def forward(self, x):
+        x = x.to(torch.float32)
+        x = self.dct_2d(x, norm=self.norm)
+
+        _,_, h, w = x.shape
+        mask = torch.ones((h, w), dtype=torch.int64, device = torch.device('cuda:0'))
+        # diagonal = w-(int(w//8))
+        diagonal = int(w*self.tau / 0.5)
+        hf_mask = torch.fliplr(torch.triu(mask, diagonal)) != 1
+        hf_mask = hf_mask.unsqueeze(0).expand(x.size())
+        hf = x * hf_mask
+        
+        return hf
+    
+class IDCT_2D(nn.Module):
+    def __init__(self, norm=None):
+        super(IDCT_2D, self).__init__()
+        self.norm = norm
+        
+    def idct_2d(self, X, norm=None):
+        x1 = self.idct(X, norm=norm)
+        x2 = self.idct(x1.transpose(-1, -2), norm=norm)
+        return x2.transpose(-1, -2)
+    
+    def idct(self, X, norm=None):
+        x_shape = X.shape
+        N = x_shape[-1]
+
+        X_v = X.contiguous().view(-1, x_shape[-1]) / 2
+
+        if norm == 'ortho':
+            X_v[:, 0] *= np.sqrt(N) * 2
+            X_v[:, 1:] *= np.sqrt(N / 2) * 2
+        elif norm == 'infusion':
+            X_v *= torch.where(X_v == 0, np.sqrt(1/N), np.sqrt(2/N))
+
+        k = torch.arange(x_shape[-1], dtype=X.dtype, device=X.device)[None, :] * np.pi / (2 * N)
+        W_r = torch.cos(k)
+        W_i = torch.sin(k)
+
+        V_t_r = X_v
+        V_t_i = torch.cat([X_v[:, :1] * 0, -X_v.flip([1])[:, :-1]], dim=1)
+
+        V_r = V_t_r * W_r - V_t_i * W_i
+        V_i = V_t_r * W_i + V_t_i * W_r
+
+        V = torch.cat([V_r.unsqueeze(2), V_i.unsqueeze(2)], dim=2)
+
+        v = idct_irfft_impl(V, 1, onesided=False)
+        x = v.new_zeros(v.shape)
+        x[:, ::2] += v[:, :N - (N // 2)]
+        x[:, 1::2] += v.flip([1])[:, :N // 2]
+
+        return x.view(*x_shape)
+    
+    def forward(self, x):
+        x = self.idct_2d(x, norm=self.norm)
+        x = x.to(torch.half)
+       
+        return x
+
+class HEBlock(nn.Module):
+    """ HE Block for extracting high frequency features 
+    
+    Arguments:
+    ----------
+        tau: float
+            Threshold for masking lower frequencies
+        norm: str
+            Normalization type for DCT
+        mask_freq: bool
+            Whether to mask lower frequencies
+    """
+    def __init__(self, tau:float=0.2, norm:str=None, mask_freq:bool=True):
+        super(HEBlock, self).__init__()
+
+        self.tau = tau
+        self.dct = DCT_2D(norm=norm, tau=self.tau, mask_freq=mask_freq)
+        self.idct = IDCT_2D(norm=norm)
+
+    def forward(self, x):
+        x = self.dct(x)
+        return self.idct(x)
+    
+
+class CALayer(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(CALayer, self).__init__()
+        # global average pooling: feature --> point
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        # feature channel downscale and upscale --> channel weight
+        self.conv_du = nn.Sequential(
+                nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True),
+                nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        y = self.avg_pool(x)
+        y = self.conv_du(y)
+        return x * y
+
+## Residual Channel Attention Block (RCAB)
+class RCAB(nn.Module):
+    def __init__(self, n_feat, kernel_size=3, reduction=16, bias=True, bn=False, act=nn.ReLU(True), res_scale=1):
+        super(RCAB, self).__init__()
+        modules_body = []
+        for i in range(2):
+            modules_body.append(nn.Conv2d(n_feat, n_feat, kernel_size,padding=(kernel_size//2), bias=bias))
+            if bn: modules_body.append(nn.BatchNorm2d(n_feat))
+            if i == 0: modules_body.append(act)
+        modules_body.append(CALayer(n_feat, reduction))
+        self.body = nn.Sequential(*modules_body)
+        # self.res_scale = res_scale
+
+    def forward(self, x):
+        res = self.body(x)
+        res += x
+        return res
+
