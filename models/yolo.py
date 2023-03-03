@@ -108,17 +108,20 @@ class Segment(Detect):
 
 class BaseModel(nn.Module):
     # YOLOv5 base model
-    def forward(self, x, profile=False, visualize=False):
-        return self._forward_once(x, profile, visualize)  # single-scale inference, train
+    def forward(self, x, x_lwir, profile=False, visualize=False):
+        return self._forward_once(x, x_lwir, profile, visualize)  # single-scale inference, train
 
-    def _forward_once(self, x, profile=False, visualize=False):
+    def _forward_once(self, x, x_lwir, profile=False, visualize=False):
         y, dt = [], []  # outputs
         for m in self.model:
-            if m.f != -1:  # if not from previous layer
+            if m.f != -1 and m.f != -4:  # if not from previous layer
                 x = y[m.f] if isinstance(m.f, int) else [x if j == -1 else y[j] for j in m.f]  # from earlier layers
             if profile:
                 self._profile_one_layer(m, x, dt)
-            x = m(x)  # run
+            if m.f == -4:
+                x = m(x_lwir)  # run
+            else:
+                x = m(x)
             y.append(x if m.i in self.save else None)  # save output
             if visualize:
                 feature_visualization(x, m.type, m.i, save_dir=visualize)
@@ -190,9 +193,10 @@ class DetectionModel(BaseModel):
         m = self.model[-1]  # Detect()
         if isinstance(m, (Detect, Segment)):
             s = 256  # 2x min stride
-            m.inplace = self.inplace
-            forward = lambda x: self.forward(x)[0] if isinstance(m, Segment) else self.forward(x)
-            m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
+            # m.inplace = self.inplace
+            # forward = lambda x: self.forward(x)[0] if isinstance(m, Segment) else self.forward(x)
+            # m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
+            m.stride = torch.Tensor([8.0, 16.0, 32.0])
             check_anchor_order(m)
             m.anchors /= m.stride.view(-1, 1, 1)
             self.stride = m.stride
@@ -203,19 +207,20 @@ class DetectionModel(BaseModel):
         self.info()
         LOGGER.info('')
 
-    def forward(self, x, augment=False, profile=False, visualize=False):
+    def forward(self, x, x_lwir, augment=False, profile=False, visualize=False):
         if augment:
-            return self._forward_augment(x)  # augmented inference, None
-        return self._forward_once(x, profile, visualize)  # single-scale inference, train
+            return self._forward_augment(x, x_lwir)  # augmented inference, None
+        return self._forward_once(x, x_lwir, profile, visualize)  # single-scale inference, train
 
-    def _forward_augment(self, x):
+    def _forward_augment(self, x, x_lwir):
         img_size = x.shape[-2:]  # height, width
         s = [1, 0.83, 0.67]  # scales
         f = [None, 3, None]  # flips (2-ud, 3-lr)
         y = []  # outputs
         for si, fi in zip(s, f):
             xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
-            yi = self._forward_once(xi)[0]  # forward
+            xi_lwir = scale_img(x_lwir.flip(fi) if fi else x_lwir, si, gs=int(self.stride.max()))
+            yi = self._forward_once(xi, xi_lwir)[0]  # forward
             # cv2.imwrite(f'img_{si}.jpg', 255 * xi[0].cpu().numpy().transpose((1, 2, 0))[:, :, ::-1])  # save
             yi = self._descale_pred(yi, fi, si, img_size)
             y.append(yi)
@@ -316,8 +321,12 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         n = n_ = max(round(n * gd), 1) if n > 1 else n  # depth gain
         if m in {
                 Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,
-                BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x}:
-            c1, c2 = ch[f], args[0]
+                BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, 
+                HEBlock, RCAB, WeightFusionParam}:
+            if f == -4:
+                c1, c2 = 3, args[0]
+            else:
+                c1, c2 = ch[f], args[0]
             if c2 != no:  # if not output
                 c2 = make_divisible(c2 * gw, 8)
 
@@ -340,6 +349,15 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             c2 = ch[f] * args[0] ** 2
         elif m is Expand:
             c2 = ch[f] // args[0] ** 2
+        elif m is Add:
+            # print("ch[f]", f, ch[f[0]])
+            c2 = ch[f[0]]
+            args = [c2]
+        elif m is Add_res:
+            # print("ch[f]", f, ch[f[0]])
+            c2 = ch[f[0]]
+            # print("Add2 arg", args)
+            args = [c2]
         else:
             c2 = ch[f]
 
@@ -358,7 +376,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='yolov5s.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='/home/zjq/ZYS/yolov5/models/infusion-net/yolov5l_dct_rcab_weights.yaml', help='model.yaml')
     parser.add_argument('--batch-size', type=int, default=1, help='total batch size for all GPUs')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--profile', action='store_true', help='profile model speed')
@@ -370,22 +388,41 @@ if __name__ == '__main__':
     device = select_device(opt.device)
 
     # Create model
-    im = torch.rand(opt.batch_size, 3, 640, 640).to(device)
+    # im = torch.rand(opt.batch_size, 3, 640, 640).to(device)
     model = Model(opt.cfg).to(device)
 
     # Options
-    if opt.line_profile:  # profile layer by layer
-        model(im, profile=True)
+    # if opt.line_profile:  # profile layer by layer
+    #     model(im, profile=True)
 
-    elif opt.profile:  # profile forward-backward
-        results = profile(input=im, ops=[model], n=3)
+    # elif opt.profile:  # profile forward-backward
+    #     results = profile(input=im, ops=[model], n=3)
 
-    elif opt.test:  # test all models
-        for cfg in Path(ROOT / 'models').rglob('yolo*.yaml'):
-            try:
-                _ = Model(cfg)
-            except Exception as e:
-                print(f'Error in {cfg}: {e}')
+    # elif opt.test:  # test all models
+    #     for cfg in Path(ROOT / 'models').rglob('yolo*.yaml'):
+    #         try:
+    #             _ = Model(cfg)
+    #         except Exception as e:
+    #             print(f'Error in {cfg}: {e}')
 
-    else:  # report fused model summary
-        model.fuse()
+    # else:  # report fused model summary
+    #     model.fuse()
+
+    input_rgb = torch.Tensor(opt.batch_size, 3, 512, 640).to(device)
+    input_ir = torch.Tensor(opt.batch_size, 3, 512, 640).to(device)
+    img = (input_rgb, input_ir)
+
+    output = model(input_rgb, input_ir)
+    print("YOLO")
+    print(output[0].shape)
+    print(output[1].shape)
+    print(output[2].shape)
+    # print(output)
+
+    # Tensorboard (not working https://github.com/ultralytics/yolov5/issues/2898)
+    from torch.utils.tensorboard import SummaryWriter
+    tb_writer = SummaryWriter('./test_runs')
+    tb_writer.add_graph(torch.jit.trace(model, img, strict=False), [])  # add model graph
+    # tb_writer.close()
+    tb_writer.add_image('test', img[0], dataformats='CWH')  # add model to tensorboard
+

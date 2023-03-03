@@ -982,7 +982,7 @@ class IDCT_2D(nn.Module):
 
         V = torch.cat([V_r.unsqueeze(2), V_i.unsqueeze(2)], dim=2)
 
-        v = idct_irfft_impl(V, 1, onesided=False)
+        v = idct_irfft_impl(V)
         x = v.new_zeros(v.shape)
         x[:, ::2] += v[:, :N - (N // 2)]
         x[:, 1::2] += v.flip([1])[:, :N // 2]
@@ -991,7 +991,7 @@ class IDCT_2D(nn.Module):
     
     def forward(self, x):
         x = self.idct_2d(x, norm=self.norm)
-        x = x.to(torch.half)
+        # x = x.to(torch.half)
        
         return x
 
@@ -1007,7 +1007,7 @@ class HEBlock(nn.Module):
         mask_freq: bool
             Whether to mask lower frequencies
     """
-    def __init__(self, tau:float=0.2, norm:str=None, mask_freq:bool=True):
+    def __init__(self, c1, c2, tau:float=0.2, norm:str=None, mask_freq:bool=True):
         super(HEBlock, self).__init__()
 
         self.tau = tau
@@ -1039,14 +1039,14 @@ class CALayer(nn.Module):
 
 ## Residual Channel Attention Block (RCAB)
 class RCAB(nn.Module):
-    def __init__(self, n_feat, kernel_size=3, reduction=16, bias=True, bn=False, act=nn.ReLU(True), res_scale=1):
+    def __init__(self, c1, c2, kernel_size=3, reduction=16, bias=True, bn=False, act=nn.ReLU(True), res_scale=1):
         super(RCAB, self).__init__()
         modules_body = []
         for i in range(2):
-            modules_body.append(nn.Conv2d(n_feat, n_feat, kernel_size,padding=(kernel_size//2), bias=bias))
-            if bn: modules_body.append(nn.BatchNorm2d(n_feat))
+            modules_body.append(nn.Conv2d(c1, c2, kernel_size,padding=(kernel_size//2), bias=bias))
+            if bn: modules_body.append(nn.BatchNorm2d(c2))
             if i == 0: modules_body.append(act)
-        modules_body.append(CALayer(n_feat, reduction))
+        modules_body.append(CALayer(c2, reduction))
         self.body = nn.Sequential(*modules_body)
         # self.res_scale = res_scale
 
@@ -1055,3 +1055,30 @@ class RCAB(nn.Module):
         res += x
         return res
 
+class WeightFusionParam(nn.Module):
+    """ Weighting parameters for the fusion of the two inputs """
+    def __init__(self, c1, c2):
+        super(WeightFusionParam, self).__init__()
+
+        self.weight_fusion = nn.Parameter(torch.randn(1), requires_grad=True)
+
+    def forward(self, x):
+        return self.weight_fusion * x
+
+class Add(nn.Module):
+    #  Add two tensors
+    def __init__(self, arg):
+        super(Add, self).__init__()
+        self.arg = arg
+
+    def forward(self, x):
+        return torch.add(x[0], x[1])
+    
+class Add_res(nn.Module):
+    #  Add two tensors
+    def __init__(self, arg):
+        super().__init__()
+        self.arg = arg
+
+    def forward(self, x):
+        return torch.add(x[0], torch.add(x[1], x[2]))
