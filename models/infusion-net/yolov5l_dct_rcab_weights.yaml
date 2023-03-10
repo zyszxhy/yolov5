@@ -35,12 +35,12 @@ backbone:
     # ir
     [9, 1, HEBlock, [256]], # 15- /8
     [-1, 1, WeightFusionParam, [256]], # 16-P3/8 ir intra
-    [10, 1, RCAB, [256]], # 17-P3/8
+    [15, 1, RCAB, [256]], # 17-P3/8
     [[9,17], 1, Add, [256]], # 18-P3/8
     [-1, 1, WeightFusionParam, [256]], # 19-P3/8 rgb inter
     # fusion
-    [[19,4,11], 1, Add, [256]], # 20-P3/8  rgb
-    [[14,9,16], 1, Add, [256]], # 21-P3/8  ir
+    [[4,19,11], 1, Add_res, [256]], # 20-P3/8  rgb
+    [[9,14,16], 1, Add_res, [256]], # 21-P3/8  ir
 
 
     # rgb stream P4
@@ -60,11 +60,11 @@ backbone:
     [25, 1, HEBlock, [512]], # 31-P4/16
     [-1, 1, WeightFusionParam, [512]], # 32-P4/16 ir intra
     [31, 1, RCAB, [512]], # 33-P4/16
-    [[25,31], 1, Add, [512]], # 34-P4/16
+    [[25,33], 1, Add, [512]], # 34-P4/16
     [-1, 1, WeightFusionParam, [512]], # 35-P4/16 rgb inter
     # fusion
-    [[35,23,27], 1, Add, [512]], # 36-P4/16  rgb
-    [[30,25,32], 1, Add, [512]], # 37-P4/16  ir
+    [[23,35,27], 1, Add_res, [512]], # 36-P4/16  rgb
+    [[25,30,32], 1, Add_res, [512]], # 37-P4/16  ir
 
 
     # rgb stream P5
@@ -89,8 +89,8 @@ backbone:
     [[43,51], 1, Add, [1024]], # 52-P5/32
     [-1, 1, WeightFusionParam, [1024]], # 53-P5/32 rgb inter
     # fusion
-    [[53,40,45], 1, Add, [1024]], # 54-P5/32  rgb
-    [[48,43,50], 1, Add, [1024]], # 55-P5/32  ir
+    [[40,53,45], 1, Add_res, [1024]], # 54-P5/32  rgb
+    [[43,48,50], 1, Add_res, [1024]], # 55-P5/32  ir
 
 
     # fusion to head
