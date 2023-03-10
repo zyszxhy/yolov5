@@ -518,7 +518,7 @@ def check_dataset(data, autodownload=True):
         data = yaml_load(data)  # dictionary
 
     # Checks
-    for k in 'train', 'val', 'names':
+    for k in 'train_rgb', 'train_ir', 'val_rgb', 'val_ir', 'names':
         assert k in data, emojis(f"data.yaml '{k}:' field missing ❌")
     if isinstance(data['names'], (list, tuple)):  # old array format
         data['names'] = dict(enumerate(data['names']))  # convert to dict
@@ -530,7 +530,7 @@ def check_dataset(data, autodownload=True):
     if not path.is_absolute():
         path = (ROOT / path).resolve()
         data['path'] = path  # download scripts
-    for k in 'train', 'val', 'test':
+    for k in 'train_rgb', 'train_ir', 'val_rgb', 'val_ir', 'test':
         if data.get(k):  # prepend path
             if isinstance(data[k], str):
                 x = (path / data[k]).resolve()
@@ -541,11 +541,12 @@ def check_dataset(data, autodownload=True):
                 data[k] = [str((path / x).resolve()) for x in data[k]]
 
     # Parse yaml
-    train, val, test, s = (data.get(x) for x in ('train', 'val', 'test', 'download'))
-    if val:
-        val = [Path(x).resolve() for x in (val if isinstance(val, list) else [val])]  # val path
-        if not all(x.exists() for x in val):
-            LOGGER.info('\nDataset not found ⚠️, missing paths %s' % [str(x) for x in val if not x.exists()])
+    train_rgb, train_ir, val_rgb, val_ir, test, s = (data.get(x) for x in \
+                                                     ('train_rgb', 'train_ir', 'val_rgb', 'val_ir', 'test', 'download'))
+    if val_rgb:
+        val_rgb = [Path(x).resolve() for x in (val_rgb if isinstance(val_rgb, list) else [val_rgb])]  # val path
+        if not all(x.exists() for x in val_rgb):
+            LOGGER.info('\nDataset not found ⚠️, missing paths %s' % [str(x) for x in val_rgb if not x.exists()])
             if not s or not autodownload:
                 raise Exception('Dataset not found ❌')
             t = time.time()

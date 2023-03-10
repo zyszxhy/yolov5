@@ -322,7 +322,8 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
         if m in {
                 Conv, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, MixConv2d, Focus, CrossConv,
                 BottleneckCSP, C3, C3TR, C3SPP, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, 
-                HEBlock, RCAB, WeightFusionParam}:
+                HEBlock, RCAB, WeightFusionParam,
+                IDCT_2D_pre, DCT_2D_pre}:
             if f == -4:
                 c1, c2 = 3, args[0]
             else:

@@ -141,9 +141,12 @@ def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleF
     return im, ratio, (dw, dh)
 
 
-def random_perspective(im,
-                       targets=(),
-                       segments=(),
+def random_perspective(im_rgb,
+                       im_ir,
+                       targets_rgb=(),
+                       targets_ir=(),
+                       segments_rgb=(),
+                       segments_ir=(),
                        degrees=10,
                        translate=.1,
                        scale=.1,
@@ -152,6 +155,10 @@ def random_perspective(im,
                        border=(0, 0)):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(0.1, 0.1), scale=(0.9, 1.1), shear=(-10, 10))
     # targets = [cls, xyxy]
+
+    im = im_rgb
+    targets = targets_rgb
+    segments = segments_rgb
 
     height = im.shape[0] + border[0] * 2  # shape(h,w,c)
     width = im.shape[1] + border[1] * 2
@@ -188,9 +195,11 @@ def random_perspective(im,
     M = T @ S @ R @ P @ C  # order of operations (right to left) is IMPORTANT
     if (border[0] != 0) or (border[1] != 0) or (M != np.eye(3)).any():  # image changed
         if perspective:
-            im = cv2.warpPerspective(im, M, dsize=(width, height), borderValue=(114, 114, 114))
+            im_rgb = cv2.warpPerspective(im_rgb, M, dsize=(width, height), borderValue=(114, 114, 114))
+            im_ir = cv2.warpPerspective(im_ir, M, dsize=(width, height), borderValue=(114, 114, 114))
         else:  # affine
-            im = cv2.warpAffine(im, M[:2], dsize=(width, height), borderValue=(114, 114, 114))
+            im_rgb = cv2.warpAffine(im_rgb, M[:2], dsize=(width, height), borderValue=(114, 114, 114))
+            im_ir = cv2.warpAffine(im_ir, M[:2], dsize=(width, height), borderValue=(114, 114, 114))
 
     # Visualize
     # import matplotlib.pyplot as plt
@@ -234,15 +243,19 @@ def random_perspective(im,
         targets = targets[i]
         targets[:, 1:5] = new[i]
 
-    return im, targets
+    return im_rgb, im_ir, targets, targets.copy()
 
 
-def copy_paste(im, labels, segments, p=0.5):
+def copy_paste(im_rgb, im_ir, labels_rgb, labels_ir, segments_rgb, segments_ir, p=0.5):
     # Implement Copy-Paste augmentation https://arxiv.org/abs/2012.07177, labels as nx5 np.array(cls, xyxy)
+    segments = segments_rgb
+    labels = labels_rgb
+    
     n = len(segments)
     if p and n:
-        h, w, c = im.shape  # height, width, channels
-        im_new = np.zeros(im.shape, np.uint8)
+        h, w, c = im_rgb.shape  # height, width, channels
+        im_new = np.zeros(im_rgb.shape, np.uint8)
+        # im_new_ir = np.zeros(im_ir.shape, np.uint8)
         for j in random.sample(range(n), k=round(p * n)):
             l, s = labels[j], segments[j]
             box = w - l[3], l[2], w - l[1], l[4]
@@ -251,12 +264,17 @@ def copy_paste(im, labels, segments, p=0.5):
                 labels = np.concatenate((labels, [[l[0], *box]]), 0)
                 segments.append(np.concatenate((w - s[:, 0:1], s[:, 1:2]), 1))
                 cv2.drawContours(im_new, [segments[j].astype(np.int32)], -1, (1, 1, 1), cv2.FILLED)
+                # cv2.drawContours(im_new_ir, [segments[j].astype(np.int32)], -1, (1, 1, 1), cv2.FILLED)
 
-        result = cv2.flip(im, 1)  # augment segments (flip left-right)
+        result_rgb = cv2.flip(im_rgb, 1)  # augment segments (flip left-right)
         i = cv2.flip(im_new, 1).astype(bool)
-        im[i] = result[i]  # cv2.imwrite('debug.jpg', im)  # debug
+        im_rgb[i] = result_rgb[i]  # cv2.imwrite('debug.jpg', im)  # debug
 
-    return im, labels, segments
+        result_ir = cv2.flip(im_ir, 1)  # augment segments (flip left-right)
+        # i = cv2.flip(im_new_ir, 1).astype(bool)
+        im_ir[i] = result_ir[i]  # cv2.imwrite('debug.jpg', im)  # debug
+
+    return im_rgb, im_ir, labels, labels.copy(), segments, segments.copy()
 
 
 def cutout(im, labels, p=0.5):

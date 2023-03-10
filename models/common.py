@@ -1048,7 +1048,7 @@ class RCAB(nn.Module):
             if i == 0: modules_body.append(act)
         modules_body.append(CALayer(c2, reduction))
         self.body = nn.Sequential(*modules_body)
-        # self.res_scale = res_scale
+        self.res_scale = res_scale
 
     def forward(self, x):
         res = self.body(x)
@@ -1082,3 +1082,134 @@ class Add_res(nn.Module):
 
     def forward(self, x):
         return torch.add(x[0], torch.add(x[1], x[2]))
+
+
+class DCT_2D_pre(nn.Module):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):
+        super(DCT_2D_pre, self).__init__()
+
+
+    def dct_2d(self, x, norm=None):
+        X1 = self.dct(x, norm=norm)
+        X2 = self.dct(X1.transpose(-1, -2), norm=norm)
+        return X2.transpose(-1, -2)
+
+    def _rfft(self, x, signal_ndim=1, onesided=True):
+        odd_shape1 = (x.shape[1] % 2 != 0)
+        x = torch.fft.rfft(x)
+        x = torch.cat([x.real.unsqueeze(dim=2), x.imag.unsqueeze(dim=2)], dim=2)
+        if onesided == False:
+            _x = x[:, 1:, :].flip(dims=[1]).clone() if odd_shape1 else x[:, 1:-1, :].flip(dims=[1]).clone()
+            _x[:,:,1] = -1 * _x[:,:,1]
+            x = torch.cat([x, _x], dim=1)
+        return x
+
+    def dct(self, x, norm=None):
+        x_shape = x.shape
+        N = x_shape[-1]
+        x = x.contiguous().view(-1, N)
+
+        v = torch.cat([x[:, ::2], x[:, 1::2].flip([1])], dim=1)
+        Vc = self._rfft(v, 1, onesided=False)
+        k = - torch.arange(N, dtype=x.dtype, device=x.device)[None, :] * np.pi / (2 * N)
+        W_r = torch.cos(k)
+        W_i = torch.sin(k)
+
+        V = Vc[:, :, 0] * W_r - Vc[:, :, 1] * W_i
+
+        if norm == 'ortho':
+            V[:, 0] /= np.sqrt(N) * 2
+            V[:, 1:] /= np.sqrt(N / 2) * 2
+
+        V = 2 * V.view(*x_shape)
+
+        return V
+
+    def forward(self, x):
+        x = x.to(torch.float32)
+        x = self.dct_2d(x)
+
+        _,_, h, w = x.shape
+        mask = torch.ones((h, w), dtype=torch.int64, device = torch.device('cuda:0'))
+        diagonal = w-(int(w//4))
+        hf_mask = torch.fliplr(torch.triu(mask, diagonal)) != 1
+        hf_mask = hf_mask.unsqueeze(0).expand(x.size())
+        hf = x * hf_mask
+        
+        return hf
+
+# def default_conv(in_channels, out_channels, kernel_size, bias=True):
+#     return nn.Conv2d(
+#         in_channels, out_channels, kernel_size,
+#         padding=(kernel_size//2), bias=bias)
+
+class IDCT_2D_pre(nn.Module):
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):
+        super(IDCT_2D_pre, self).__init__()
+        kernel_size = 3
+        #------------------------------
+        self.RCAB1 = RCAB(c2, c2, kernel_size)
+        # self.RCAB2 = RCAB(c2, kernel_size)
+        # self.RCAB3 = RCAB(c2, kernel_size)
+        # self.RCAB4 = RCAB(default_conv, c2, kernel_size)
+        # self.RCAB5 = RCAB(default_conv, c2, kernel_size)
+        #------------------------------
+        # self.weight = WeightFusionParam(c1, c2)
+
+    def idct_2d(self, X, norm=None):
+        x1 = self.idct(X, norm=norm)
+        x2 = self.idct(x1.transpose(-1, -2), norm=norm)
+        return x2.transpose(-1, -2)
+    
+    def _irfft(self, x, signal_ndim=1, onesided=True):
+        if onesided == False:
+            res_shape1 = x.shape[1]
+            x = x[:,:(x.shape[1] // 2 + 1),:]
+            x = torch.complex(x[:,:,0].float(), x[:,:,1].float())
+            x = torch.fft.irfft(x, n=res_shape1)
+        else:
+            x = torch.complex(x[:,:,0].float(), x[:,:,1].float())
+            x = torch.fft.irfft(x)
+        return x
+    
+    def idct(self, X, norm=None):
+        x_shape = X.shape
+        N = x_shape[-1]
+
+        X_v = X.contiguous().view(-1, x_shape[-1]) / 2
+
+        if norm == 'ortho':
+            X_v[:, 0] *= np.sqrt(N) * 2
+            X_v[:, 1:] *= np.sqrt(N / 2) * 2
+
+        k = torch.arange(x_shape[-1], dtype=X.dtype, device=X.device)[None, :] * np.pi / (2 * N)
+        W_r = torch.cos(k)
+        W_i = torch.sin(k)
+
+        V_t_r = X_v
+        V_t_i = torch.cat([X_v[:, :1] * 0, -X_v.flip([1])[:, :-1]], dim=1)
+
+        V_r = V_t_r * W_r - V_t_i * W_i
+        V_i = V_t_r * W_i + V_t_i * W_r
+
+        V = torch.cat([V_r.unsqueeze(2), V_i.unsqueeze(2)], dim=2)
+
+        v = self._irfft(V, 1, onesided=False)
+        x = v.new_zeros(v.shape)
+        x[:, ::2] += v[:, :N - (N // 2)]
+        x[:, 1::2] += v.flip([1])[:, :N // 2]
+
+        return x.view(*x_shape)
+    
+    def forward(self, x):
+        x = self.idct_2d(x)
+        # x = x.to(torch.half)
+        #------------------------------
+        rx = self.RCAB1(x)
+        # rx = self.RCAB2(rx)
+        # rx = self.RCAB3(rx)
+        # # rx = self.RCAB4(rx)
+        # # rx = self.RCAB5(rx)
+        x = x + rx
+        #------------------------------
+        return x

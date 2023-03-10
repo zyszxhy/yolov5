@@ -172,7 +172,10 @@ def run(
         model.warmup(imgsz=(1 if pt else batch_size, 3, imgsz, imgsz))  # warmup
         pad, rect = (0.0, False) if task == 'speed' else (0.5, pt)  # square inference for benchmarks
         task = task if task in ('train', 'val', 'test') else 'val'  # path to train/val/test images
-        dataloader = create_dataloader(data[task],
+        val_path_rgb = data['val_rgb']
+        val_path_ir = data['val_ir']
+        dataloader = create_dataloader(val_path_rgb,
+                                       val_path_ir,
                                        imgsz,
                                        batch_size,
                                        stride,
@@ -205,9 +208,12 @@ def run(
             im /= 255  # 0 - 255 to 0.0 - 1.0
             nb, _, height, width = im.shape  # batch size, channels, height, width
 
+            im_rgb = im[:, :3, :, :]
+            im_ir = im[:, 3:, :, :]
+
         # Inference
         with dt[1]:
-            preds, train_out = model(im) if compute_loss else (model(im, augment=augment), None)
+            preds, train_out = model(im_rgb, im_ir) if compute_loss else (model(im_rgb, im_ir, augment=augment), None)
 
         # Loss
         if compute_loss:
