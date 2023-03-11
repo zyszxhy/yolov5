@@ -271,8 +271,10 @@ def run(
 
         # Plot images
         if plots and batch_i < 3:
-            plot_images(im, targets, paths, save_dir / f'val_batch{batch_i}_labels.jpg', names)  # labels
-            plot_images(im, output_to_target(preds), paths, save_dir / f'val_batch{batch_i}_pred.jpg', names)  # pred
+            plot_images(im_rgb, targets, paths, save_dir / f'val_batch{batch_i}_labels_rgb.jpg', names)  # labels
+            plot_images(im_rgb, output_to_target(preds), paths, save_dir / f'val_batch{batch_i}_pred_rgb.jpg', names)  # pred
+            plot_images(im_ir, targets, paths, save_dir / f'val_batch{batch_i}_labels_ir.jpg', names)  # labels
+            plot_images(im_ir, output_to_target(preds), paths, save_dir / f'val_batch{batch_i}_pred_ir.jpg', names)  # pred
 
         callbacks.run('on_val_batch_end', batch_i, im, targets, paths, shapes, preds)
 
@@ -345,8 +347,8 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'yolov5s.pt', help='model path(s)')
+    parser.add_argument('--data', type=str, default=ROOT / 'data/FLIR_aligned.yaml', help='dataset.yaml path')
+    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'runs/train/exp2/weights/best.pt', help='model path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')

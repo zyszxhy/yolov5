@@ -502,8 +502,9 @@ class DetectMultiBackend(nn.Module):
 
         self.__dict__.update(locals())  # assign all variables to self
 
-    def forward(self, im, augment=False, visualize=False):
+    def forward(self, im_rgb, im_ir, augment=False, visualize=False):
         # YOLOv5 MultiBackend inference
+        im = im_rgb
         b, ch, h, w = im.shape  # batch, channel, height, width
         if self.fp16 and im.dtype != torch.float16:
             im = im.half()  # to FP16
@@ -511,19 +512,24 @@ class DetectMultiBackend(nn.Module):
             im = im.permute(0, 2, 3, 1)  # torch BCHW to numpy BHWC shape(1,320,192,3)
 
         if self.pt:  # PyTorch
-            y = self.model(im, augment=augment, visualize=visualize) if augment or visualize else self.model(im)
+            y = self.model(im_rgb, im_ir, augment=augment, visualize=visualize) \
+                if augment or visualize else self.model(im_rgb, im_ir)
         elif self.jit:  # TorchScript
-            y = self.model(im)
+            y = self.model(im_rgb, im_ir)
         elif self.dnn:  # ONNX OpenCV DNN
-            im = im.cpu().numpy()  # torch to numpy
-            self.net.setInput(im)
+            im_rgb = im_rgb.cpu().numpy()  # torch to numpy
+            im_ir = im_ir.cpu().numpy()  # torch to numpy
+            self.net.setInput(im_rgb, im_ir)
             y = self.net.forward()
         elif self.onnx:  # ONNX Runtime
-            im = im.cpu().numpy()  # torch to numpy
-            y = self.session.run(self.output_names, {self.session.get_inputs()[0].name: im})
+            im_rgb = im_rgb.cpu().numpy()  # torch to numpy
+            im_ir = im_ir.cpu().numpy()  # torch to numpy
+            y = self.session.run(self.output_names, {self.session.get_inputs()[0].name: im_rgb,\
+                                                     self.session.get_inputs()[1].name: im_ir})
         elif self.xml:  # OpenVINO
-            im = im.cpu().numpy()  # FP32
-            y = list(self.executable_network([im]).values())
+            im_rgb = im_rgb.cpu().numpy()  # FP32
+            im_ir = im_ir.cpu().numpy()  # FP32
+            y = list(self.executable_network([im_rgb, im_ir]).values())
         elif self.engine:  # TensorRT
             if self.dynamic and im.shape != self.bindings['images'].shape:
                 i = self.model.get_binding_index('images')
@@ -549,18 +555,20 @@ class DetectMultiBackend(nn.Module):
             else:
                 y = list(reversed(y.values()))  # reversed for segmentation models (pred, proto)
         elif self.paddle:  # PaddlePaddle
-            im = im.cpu().numpy().astype(np.float32)
-            self.input_handle.copy_from_cpu(im)
+            im_rgb = im_rgb.cpu().numpy().astype(np.float32)
+            im_ir = im_ir.cpu().numpy().astype(np.float32)
+            self.input_handle.copy_from_cpu(im_rgb, im_ir)
             self.predictor.run()
             y = [self.predictor.get_output_handle(x).copy_to_cpu() for x in self.output_names]
         elif self.triton:  # NVIDIA Triton Inference Server
-            y = self.model(im)
+            y = self.model(im_rgb, im_ir)
         else:  # TensorFlow (SavedModel, GraphDef, Lite, Edge TPU)
-            im = im.cpu().numpy()
+            im_rgb = im_rgb.cpu().numpy()
+            im_ir = im_ir.cpu().numpy()
             if self.saved_model:  # SavedModel
-                y = self.model(im, training=False) if self.keras else self.model(im)
+                y = self.model(im_rgb, im_ir, training=False) if self.keras else self.model(im_rgb, im_ir)
             elif self.pb:  # GraphDef
-                y = self.frozen_func(x=self.tf.constant(im))
+                y = self.frozen_func(x1=self.tf.constant(im_rgb), x2=self.tf.constant(im_ir))
             else:  # Lite or Edge TPU
                 input = self.input_details[0]
                 int8 = input['dtype'] == np.uint8  # is TFLite quantized uint8 model
@@ -585,15 +593,17 @@ class DetectMultiBackend(nn.Module):
             return self.from_numpy(y)
 
     def from_numpy(self, x):
-        return torch.from_numpy(x).to(self.device) if isinstance(x, np.ndarray) else x
+        return torch.from_numpy(x).to(self.device) if isinstance(x, np.ndarray)\
+            else x
 
     def warmup(self, imgsz=(1, 3, 640, 640)):
         # Warmup model by running inference once
         warmup_types = self.pt, self.jit, self.onnx, self.engine, self.saved_model, self.pb, self.triton
         if any(warmup_types) and (self.device.type != 'cpu' or self.triton):
-            im = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
+            im_rgb = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
+            im_ir = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
             for _ in range(2 if self.jit else 1):  #
-                self.forward(im)  # warmup
+                self.forward(im_rgb, im_ir)  # warmup
 
     @staticmethod
     def _model_type(p='path/to/model.pt'):
@@ -991,7 +1001,6 @@ class IDCT_2D(nn.Module):
     
     def forward(self, x):
         x = self.idct_2d(x, norm=self.norm)
-        # x = x.to(torch.half)
        
         return x
 
@@ -1015,8 +1024,11 @@ class HEBlock(nn.Module):
         self.idct = IDCT_2D(norm=norm)
 
     def forward(self, x):
+        x_type = x.dtype
         x = self.dct(x)
-        return self.idct(x)
+        x = self.idct(x)
+        x = x.to(x_type)
+        return x
     
 
 class CALayer(nn.Module):
@@ -1137,11 +1149,6 @@ class DCT_2D_pre(nn.Module):
         hf = x * hf_mask
         
         return hf
-
-# def default_conv(in_channels, out_channels, kernel_size, bias=True):
-#     return nn.Conv2d(
-#         in_channels, out_channels, kernel_size,
-#         padding=(kernel_size//2), bias=bias)
 
 class IDCT_2D_pre(nn.Module):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):
