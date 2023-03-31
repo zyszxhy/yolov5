@@ -20,23 +20,23 @@ def format_state_dict(csd):
             my_yolo_state_dict[key_ir] = value
 
         elif layer_id>=5 and layer_id<=6:
-            layer_id_rgb = str(layer_id + 17)
+            layer_id_rgb = str(layer_id + 7)   # 17 15 11
             key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
             my_yolo_state_dict[key_rgb] = value
-            layer_id_ir = str(layer_id + 19)
+            layer_id_ir = str(layer_id + 9)    # 19 17 13
             key_ir = key.replace(str(layer_id), layer_id_ir, 1)
             my_yolo_state_dict[key_ir] = value
         
         elif layer_id>=7 and layer_id<=9:
-            layer_id_rgb = str(layer_id + 31)
+            layer_id_rgb = str(layer_id + 11)   # 31 27 19
             key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
             my_yolo_state_dict[key_rgb] = value
-            layer_id_ir = str(layer_id + 34)
+            layer_id_ir = str(layer_id + 14)    # 34 30 22
             key_ir = key.replace(str(layer_id), layer_id_ir, 1)
             my_yolo_state_dict[key_ir] = value
 
         elif layer_id>=10:
-            layer_id_rgb = str(layer_id + 55)
+            layer_id_rgb = str(layer_id + 19)   # 55 49 37
             key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
             my_yolo_state_dict[key_rgb] = value
             # layer_id_ir = str(layer_id + 19)

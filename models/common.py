@@ -905,10 +905,13 @@ except ImportError:
 
 
 class DCT_2D(nn.Module):
-    def __init__(self, norm=None, tau=0.2, mask_freq:bool=True):
+    def __init__(self, norm=None, learnable_tau:bool=False, tau=0.2, mask_freq:bool=True):
         super(DCT_2D, self).__init__()
         self.norm = norm
-        self.tau = tau
+        if learnable_tau:
+            self.tau = nn.Parameter(torch.tensor([0.2]), requires_grad=True)
+        else:
+            self.tau = tau
         self.mask_freq = mask_freq
 
 
@@ -948,15 +951,22 @@ class DCT_2D(nn.Module):
         x = x.to(torch.float32)
         x = self.dct_2d(x, norm=self.norm)
 
-        _,_, h, w = x.shape
-        mask = torch.ones((h, w), dtype=torch.int64, device = torch.device('cuda:0'))
-        # diagonal = w-(int(w//8))
-        diagonal = int(w*self.tau / 0.5)
-        hf_mask = torch.fliplr(torch.triu(mask, diagonal)) != 1
-        hf_mask = hf_mask.unsqueeze(0).expand(x.size())
-        hf = x * hf_mask
-        
-        return hf
+        if self.mask_freq:
+            _,_, h, w = x.shape
+            mask = torch.ones((h, w), dtype=torch.int64, device = torch.device('cuda:0'))
+            # diagonal = w-(int(w//8))
+            if self.tau < -0.5:
+                self.tau = -0.5
+            elif self.tau > 0.5:
+                self.tau = 0.5
+            diagonal = int(w*self.tau / 0.5)
+            hf_mask = torch.fliplr(torch.triu(mask, diagonal)) != 1
+            hf_mask = hf_mask.unsqueeze(0).expand(x.size())
+            hf = x * hf_mask
+            
+            return hf
+        else:
+            return x
     
 class IDCT_2D(nn.Module):
     def __init__(self, norm=None):
@@ -1016,11 +1026,13 @@ class HEBlock(nn.Module):
         mask_freq: bool
             Whether to mask lower frequencies
     """
-    def __init__(self, c1, c2, tau:float=0.2, norm:str=None, mask_freq:bool=True):
+    def __init__(self, c1, c2, learnable_tau:bool=False, tau:float=0.3, norm:str=None, mask_freq:bool=True):
         super(HEBlock, self).__init__()
 
         self.tau = tau
-        self.dct = DCT_2D(norm=norm, tau=self.tau, mask_freq=mask_freq)
+        self.learnable_tau = learnable_tau
+        self.mask_freq = mask_freq
+        self.dct = DCT_2D(norm=norm, learnable_tau=self.learnable_tau, tau=self.tau, mask_freq=self.mask_freq)
         self.idct = IDCT_2D(norm=norm)
 
     def forward(self, x):

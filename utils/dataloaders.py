@@ -909,8 +909,7 @@ class LoadImagesAndLabels(Dataset):
                 im_rgb = cv2.resize(im_rgb, (math.ceil(w0 * r), math.ceil(h0 * r)), interpolation=interp)
                 im_ir = cv2.resize(im_ir, (math.ceil(w0 * r), math.ceil(h0 * r)), interpolation=interp)
             return im_rgb, im_ir, (h0, w0), im_rgb.shape[:2]  # im, hw_original, hw_resized
-        return self.ims_rgb[i], self.ims_ir[i], self.im_hw0_rgb[i], self.im_hw0_ir[i], \
-            self.im_hw_rgb[i], self.im_hw_ir[i]  # im, hw_original, hw_resized
+        return self.ims_rgb[i], self.ims_ir[i], self.im_hw0_rgb[i], self.im_hw_rgb[i]  # im, hw_original, hw_resized
 
     def load_image_rgb(self, i):
         # Loads 1 image from dataset index 'i', returns (im, original hw, resized hw)

@@ -1,0 +1,17 @@
+# COCO 2017 dataset http://cocodataset.org - first 128 training images
+# Train command: python train.py --data coco128.yaml
+# Default dataset location is next to YOLOv5:
+#   /parent_folder
+#     /coco128
+#     /yolov5
+
+
+# train and val data as 1) directory: path/images/, 2) file: path/images.txt, or 3) list: [path1/images/, path2/images/]
+path: /home/data4/zjq/LLVIP
+train_rgb: train_rgb.txt
+val_rgb: val_rgb.txt  
+train_ir: train_ir.txt
+val_ir: val_ir.txt
+
+names:
+  0: person
