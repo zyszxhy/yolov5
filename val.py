@@ -51,10 +51,19 @@ def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result
     gn = torch.tensor(shape)[[1, 0, 1, 0]]  # normalization gain whwh
     for *xyxy, conf, cls in predn.tolist():
-        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-        line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
+        # xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+        # line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
+        # with open(file, 'a') as f:
+        #     f.write(('%g ' * len(line)).rstrip() % line + '\n')
+        
+        if cls == 0:
+            label = 'person'
+        else:
+            label = 'person?a'
+        line = (label, str(xyxy[0]), str(xyxy[1]), str(xyxy[2]), str(xyxy[3]), str(conf)) if save_conf \
+            else (label, str(xyxy[0]), str(xyxy[1]), str(xyxy[2]), str(xyxy[3]))  # KAIST label format
         with open(file, 'a') as f:
-            f.write(('%g ' * len(line)).rstrip() % line + '\n')
+            f.write(('%s ' * len(line)).rstrip() % line + '\n')
 
 
 def save_one_json(predn, jdict, path, class_map):
@@ -264,7 +273,7 @@ def run(
 
             # Save/log
             if save_txt:
-                save_one_txt(predn, save_conf, shape, file=save_dir / 'labels' / f'{path.stem}.txt')
+                save_one_txt(predn, save_conf, shape, file=save_dir / 'labels' / f'{path.stem[:-4]}.txt')
             if save_json:
                 save_one_json(predn, jdict, path, class_map)  # append to COCO-JSON dictionary
             callbacks.run('on_val_image_end', pred, predn, path, names, im[si])
@@ -347,8 +356,8 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default=ROOT / 'data/FLIR_aligned.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'runs/train/exp2/weights/best.pt', help='model path(s)')
+    parser.add_argument('--data', type=str, default=ROOT / 'data/KAIST.yaml', help='dataset.yaml path')
+    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'runs/train/baseline/exp/weights/best.pt', help='model path(s)')
     parser.add_argument('--batch-size', type=int, default=32, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.001, help='confidence threshold')
@@ -364,7 +373,7 @@ def parse_opt():
     parser.add_argument('--save-hybrid', action='store_true', help='save label+prediction hybrid results to *.txt')
     parser.add_argument('--save-conf', action='store_true', help='save confidences in --save-txt labels')
     parser.add_argument('--save-json', action='store_true', help='save a COCO-JSON results file')
-    parser.add_argument('--project', default=ROOT / 'runs/val', help='save to project/name')
+    parser.add_argument('--project', default=ROOT / 'runs/val/KAIST', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
