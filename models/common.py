@@ -1232,3 +1232,28 @@ class IDCT_2D_pre(nn.Module):
         x = x + rx
         #------------------------------
         return x
+
+class MCFF(nn.Module):
+    def __init__(self, c1, c2, r=2):
+        super().__init__()
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.gmp = nn.AdaptiveMaxPool2d(1)
+        self.fc = nn.Sequential(
+            Conv(c1*2, c1//r, 1),
+            Conv(c1//r, c1, 1),
+        )
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x):
+        bs, c, h, w = x[0].shape
+        feat = torch.cat(x, 1)
+        feat_gap = self.gap(feat)
+        feat_gmp = self.gmp(feat)
+        feat = feat_gap + feat_gmp
+        feat = self.fc(feat)
+        feat = feat.reshape(bs, c, 1, 1, 2)
+        f_w = self.softmax(feat)
+        alph = f_w[:, :, :, :, 0]
+        beta = f_w[:, :, :, :, 1]
+        f_fusion = x[0]*alph + x[1]*beta
+        return f_fusion

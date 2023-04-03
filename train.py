@@ -117,19 +117,40 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     is_coco = isinstance(val_path_rgb, str) and val_path_rgb.endswith('coco/val2017.txt')  # COCO dataset
 
     # Model
-    check_suffix(weights, '.pt')  # check weights
-    pretrained = weights.endswith('.pt')
+    if not resume:
+        # weights_rgb = weights + '/RGB/best.pt'
+        # weights_ir = weights + '/IR/best.pt'
+        weights_rgb = weights
+        weights_ir = weights
+        check_suffix(weights_rgb, '.pt')  # check weights
+        check_suffix(weights_ir, '.pt')  # check weights
+        pretrained = weights_rgb.endswith('.pt')
+    else:
+        check_suffix(weights, '.pt')  # check weights
+        pretrained = weights.endswith('.pt')
     if pretrained:
         with torch_distributed_zero_first(LOCAL_RANK):
-            weights = attempt_download(weights)  # download if not found locally
-        ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
+            if not resume:
+                weights_rgb = attempt_download(weights_rgb)  # download if not found locally
+                weights_ir = attempt_download(weights_ir)  # download if not found locally
+            else:
+                weights = attempt_download(weights)  # download if not found locally
+        if not resume:
+            ckpt = torch.load(weights_rgb, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
+            ckpt_ir = torch.load(weights_ir, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
+        else:
+            ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
         model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
         exclude = ['anchor'] if (cfg or hyp.get('anchors')) and not resume else []  # exclude keys
-        csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
-        
-        if not opt.resume:
+        if not resume:
+            csd_rgb = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
+            csd_ir = ckpt_ir['model'].float().state_dict()  # checkpoint state_dict as FP32
+        else:
+            csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
+         
+        if not resume:
             from utils.format_state_dict_pretrained import format_state_dict
-            csd = format_state_dict(csd)
+            csd = format_state_dict(csd_rgb, csd_ir)
 
         csd = intersect_dicts(csd, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(csd, strict=False)  # load
@@ -457,8 +478,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default=ROOT / 'weights_in_coco/yolov5l.pt', help='initial weights path')
-    parser.add_argument('--cfg', type=str, default=ROOT / 'models/infusion-net/yolov5l_baseline.yaml', help='model.yaml path')
-    parser.add_argument('--data', type=str, default=ROOT / 'data/KAIST.yaml', help='dataset.yaml path')
+    parser.add_argument('--cfg', type=str, default=ROOT / 'models/fusion/yolov5l_mcff_none.yaml', help='model.yaml path')
+    parser.add_argument('--data', type=str, default=ROOT / 'data/FLIR_aligned.yaml', help='dataset.yaml path')
     parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch-low.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs, -1 for autobatch')
@@ -479,7 +500,7 @@ def parse_opt(known=False):
     parser.add_argument('--optimizer', type=str, choices=['SGD', 'Adam', 'AdamW'], default='SGD', help='optimizer')
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
     parser.add_argument('--workers', type=int, default=8, help='max dataloader workers (per RANK in DDP mode)')
-    parser.add_argument('--project', default=ROOT / 'runs/train/baseline', help='save to project/name')
+    parser.add_argument('--project', default=ROOT / 'runs/train/fusion', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--quad', action='store_true', help='quad dataloader')
