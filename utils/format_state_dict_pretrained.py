@@ -13,33 +13,42 @@ def format_state_dict(csd_rgb, csd_ir):
 
         layer_id = int(key.split('.')[1])
 
-        if layer_id>=0 and layer_id<=4:
+        if layer_id>=0 and layer_id<=2:
             my_yolo_state_dict[key] = value
-            layer_id_ir = str(layer_id + 5)
+            layer_id_ir = str(layer_id + 3)
             key_ir = key.replace(str(layer_id), layer_id_ir, 1)
             # my_yolo_state_dict[key_ir] = value
             my_yolo_state_dict[key_ir] = csd_ir[key]
 
-        elif layer_id>=5 and layer_id<=6:
-            layer_id_rgb = str(layer_id + 5)   # 17 15 11
+        elif layer_id>=3 and layer_id<=4:
+            layer_id_rgb = str(layer_id + 5)
             key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
             my_yolo_state_dict[key_rgb] = value
-            layer_id_ir = str(layer_id + 7)    # 19 17 13
+            layer_id_ir = str(layer_id + 7)
+            key_ir = key.replace(str(layer_id), layer_id_ir, 1)
+            # my_yolo_state_dict[key_ir] = value
+            my_yolo_state_dict[key_ir] = csd_ir[key]
+        
+        elif layer_id>=5 and layer_id<=6:
+            layer_id_rgb = str(layer_id + 9)
+            key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
+            my_yolo_state_dict[key_rgb] = value
+            layer_id_ir = str(layer_id + 11)
             key_ir = key.replace(str(layer_id), layer_id_ir, 1)
             # my_yolo_state_dict[key_ir] = value
             my_yolo_state_dict[key_ir] = csd_ir[key]
         
         elif layer_id>=7 and layer_id<=9:
-            layer_id_rgb = str(layer_id + 7)   # 31 27 19
+            layer_id_rgb = str(layer_id + 13)
             key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
             my_yolo_state_dict[key_rgb] = value
-            layer_id_ir = str(layer_id + 10)    # 34 30 22
+            layer_id_ir = str(layer_id + 16)
             key_ir = key.replace(str(layer_id), layer_id_ir, 1)
             # my_yolo_state_dict[key_ir] = value
             my_yolo_state_dict[key_ir] = csd_ir[key]
 
         elif layer_id>=10:
-            layer_id_rgb = str(layer_id + 13)   # 55 49 37
+            layer_id_rgb = str(layer_id + 21)
             key_rgb = key.replace(str(layer_id), layer_id_rgb, 1)
             my_yolo_state_dict[key_rgb] = value
             # layer_id_ir = str(layer_id + 19)

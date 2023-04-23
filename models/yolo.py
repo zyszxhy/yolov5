@@ -359,6 +359,17 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
             c1 = ch[f[0]]
             c2 = args[0]
             args = [c1, c2, *args[1:]]
+        elif m is Inter_MA:
+            # print("ch[f]", f, ch[f[0]])
+            c1 = ch[f[0]]
+            c2 = args[0]
+            args = [c1, c2, *args[1:]]
+        elif m is GPT:
+            c2 = ch[f[0]]
+            args = [c2]
+        elif m is Add2:
+            c2 = ch[f[0]]
+            args = [c2, args[1]]
         elif m is Add_res:
             # print("ch[f]", f, ch[f[0]])
             c2 = ch[f[0]]
