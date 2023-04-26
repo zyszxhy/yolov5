@@ -1273,7 +1273,7 @@ class Inter_MA(nn.Module):
             # nn.ReLU(inplace=True),
             # nn.Conv2d(c1//r, c1, 1),
             nn.Linear(c1, c1//r),
-            nn.ReLU(inplace=True),
+            # nn.ReLU(inplace=True),
             nn.Linear(c1//r, c1),
 
             nn.Sigmoid()
