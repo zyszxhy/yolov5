@@ -479,7 +479,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str, default='/home/data2/ZYS/weights_in_coco/yolov5l.pt', help='initial weights path')
-    parser.add_argument('--cfg', type=str, default=ROOT / 'models/fusion/yolov5l_mcff_none_FLIR.yaml', help='model.yaml path')
+    parser.add_argument('--cfg', type=str, default=ROOT / 'models/fusion/yolov5l_mcff_CFT_FLIR.yaml', help='model.yaml path')
     parser.add_argument('--data', type=str, default=ROOT / 'data/FLIR_aligned.yaml', help='dataset.yaml path')
     parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch-low.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=50, help='total training epochs')

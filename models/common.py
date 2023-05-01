@@ -1417,7 +1417,7 @@ class GPT(nn.Module):
     """  the full GPT language model, with a context size of block_size """
 
     def __init__(self, d_model, h=8, block_exp=4,
-                 n_layer=1, vert_anchors=8, horz_anchors=8,
+                 n_layer=4, vert_anchors=8, horz_anchors=8,
                  embd_pdrop=0.1, attn_pdrop=0.1, resid_pdrop=0.1):
         super().__init__()
 
